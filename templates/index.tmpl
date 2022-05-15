@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <title>{{ .title }}</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <!-- Bootstrap -->
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin="anonymous"></script>
+        <!-- OpenStreeMap, https://leafletjs.com/, https://leafletjs.com/examples/quick-start/ -->
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.8.0/leaflet.min.css" integrity="sha512-oIQ0EBio8LJupRpgmDsIsvm0Fsr6c3XNHLB7at5xb+Cf6eQuCX9xuX8XXGRIcokNgdqL1ms7nqbQ6ryXMGxXpg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.8.0/leaflet.min.js" integrity="sha512-TL+GX2RsOUlTndpkgHVnSQ9r6zldqHzfyECrdabkpucdFroZ3/HAhMmP2WYaPjsJCoot+0McmdPOLjmmicG9qg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+        <!-- MarkerCluster -->
+        <!--
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css" integrity="sha512-ENrTWqddXrLJsQS2A86QmvA17PkJ0GVm1bqj5aTgpeMAfDKN2+SIOLpKG8R/6KkimnhTb+VW5qqUHB/r1zaRgg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+        -->
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.min.css" integrity="sha512-fYyZwU1wU0QWB4Yutd/Pvhy5J1oWAwFXun1pt+Bps04WSe4Aq6tyHlT4+MHSJhD8JlLfgLuC4CbCnX5KHSjyCg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js" integrity="sha512-TiMWaqipFi2Vqt4ugRzsF8oRoGFlFFuqIi30FFxEPNw58Ov9mOy6LgC05ysfkxwLE0xVeZtmr92wVg9siAFRWA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+        <!-- jQuery -->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js" integrity="sha512-894YE6QWD5I59HgZOGReFYm4dnWc1Qt5NtvYSaNcOP+u1T9qYdvdihz0PPSiiqn/+/3e7Jo4EaG7TubfWGUrMQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+        <!-- jQuery-CSV -->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-csv/1.0.21/jquery.csv.min.js" integrity="sha512-Y8iWYJDo6HiTo5xtml1g4QqHtl/PO1w+dmUpQfQSOTqKNsMhExfyPN2ncNAe9JuJUSKzwK/b6oaNPop4MXzkwg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+        <style>
+            .container { height: 100vh; }
+            #map { height: 100vh; }
+            #infoSide { height: 100vh; background: #ABC; overflow: scroll; }
+        </style>
+    </head>
+    <body>
+        <div id="container">
+            <div class="row">
+                <div class="col-9">
+                    <div id="map"></div>
+                </div>
+                <div class="col-3" id="infoSide">
+                    <div id="dataInfo" class="mh-100"></div>
+                    <div id="dataInfoButton" class="mh-100">
+                        <ul style="list-style-type: none;">
+                            <li>
+                                <button id="refreshButton" type="button" class="btn btn-light btn-sm btn-block" disabled>Reload Data</button>
+                            </li>
+                            <li>
+                                <button id="goToHomeButton" type="button" class="btn btn-primary btn-sm" disabled>Go to Your Location</button>
+                            </li>
+                        </ul>
+                    </div>
+                    <div id="itemList" class="accordion">
+                    </div>
+                </div>
+            </div>
+        </div>
+        <script>
+            var map = null;
+            var markerClsuterGroupObj = null;
+            var userLocation = null;
+            function goToLocation(gpsLocation, display) {
+                if (!map)
+                    return;
+                var showMessage = display ? display : "["+gpsLocation.join(',')+"]" ;
+                map.setView(gpsLocation, 15);
+            }
+            function handleUserLocation(position) {
+                userLocation = [position.coords.latitude, position.coords.longitude];
+                if (!map)
+                    return;
+                var circle = L.circle(userLocation, {
+                    color: '#F78',
+                    fillColor: '#FAB',
+                    fillOpacity: 0.3,
+                    radius: 1000,
+                }).addTo(map);
+                $('#goToHomeButton').prop('disabled', false);
+            }
+            var markerList = [];
+            var markerLookup = [];
+            function resetMarker() {
+                    if (markerList) {
+                        for (var i=0, cnt=markerList.length ; i<cnt ; ++i) {
+                            if (markerClsuterGroupObj != null)
+                                markerClsuterGroupObj.removeLayer(markerList[i]);
+                            else if (map != null)
+                                map.removeLayer(markerList[i]);
+                        }
+                    }
+                    markerList = [];
+                    markerLookup = [];
+            }
+            function updateMap(input) {
+                if (input && input['status'] && input['data'] && input["header"]) {
+                    if (input["header"]["經度"] === undefined && input["header"]["緯度"] === undefined )
+                        return;
+
+                    resetMarker();
+
+                    input['data'].forEach(function(item, index, array) {
+                        var gpsLocation = [ parseFloat(item[ input["header"]["緯度"] ]), parseFloat(item[ input["header"]["經度"] ]) ] ;
+                        if (map != null) {
+                            var marker = L.marker(gpsLocation);
+                            if (markerClsuterGroupObj != null)
+                                markerClsuterGroupObj.addLayer(marker);
+                            else
+                                marker.addTo(map);
+                            marker.bindPopup(
+                                '<h4>快篩試劑：'+item[input["header"]["快篩試劑截至目前結餘存貨數量"]]+'</h4>' +
+                                '<h5>'+item[input["header"]["醫事機構名稱"]]+'</h5>'+
+                                '<ul>'+
+                                    '<li>更新時間：'+item[input["header"]["來源資料時間"]]+'</li>'+
+                                    '<li>廠牌：'+item[input["header"]["廠牌項目"]]+'</li>'+
+                                    '<li>地址：'+item[input["header"]["醫事機構地址"]]+'</li>'+
+                                    '<li>電話：'+item[input["header"]["醫事機構電話"]]+'</li>'+
+                                    '<li>備註：'+item[input["header"]["備註"]]+'</li>'+
+                                '</ul>'+
+                                ''
+                            );
+                            markerList.push(marker);
+                            markerLookup[ item[ input["header"]["緯度"] ] + '-' + item[ input["header"]["經度"] ] ] = marker;
+                        }
+                    });
+                }
+            }
+            var tableItems = [];
+            function resetTable() {
+                tableItems = [];
+                $('#itemList').html('');
+                $('#dataInfo').html('');
+            }
+            function displayUpdatedTime(input) {
+                var apiDatetime = Date.parse(input);
+                var diff = parseInt((new Date() - apiDatetime) / 1000);
+                if (diff > 60) {
+                    return parseInt(diff / 60) + '分' + (diff % 60) + '秒前';
+                } 
+                return diff + '秒前';
+            }
+            function showDataInfo(input) {
+                    var obj = $('#dataInfo').empty().append(
+                        $.parseHTML(
+                            '<ul style="list-style-type: none;">'+
+                                '<li>'+(new Date()).toLocaleString('zh-TW')+'</li>'+
+                                '<li>資料新鮮度：'+displayUpdatedTime(input["update"])+'</li>'+
+                                '<li>資料筆數：'+input['data'].length+'</li>'+
+                            '</ul>'
+                        )
+                    );
+            }
+            function setupDataInfoButton() {
+                    $('#refreshButton').click(function() {
+                        refreshData();
+                    });
+                    $('#goToHomeButton').click(function() {
+                        goToLocation(userLocation, "your location");
+                    });
+            }
+            var prevTableItemClicked = null;
+            function tableItemClick(obj) {
+                var obj = $(obj);
+                if (map && obj.data('longitude') && obj.data('latitude')) {
+                    map.setView([parseFloat(obj.data('latitude')), parseFloat(obj.data('longitude'))], 15);
+                    var lookupKey = obj.data('latitude')+'-'+obj.data('longitude');
+                    if (markerLookup[lookupKey]) {
+                        if (prevTableItemClicked && prevTableItemClicked != lookupKey && markerLookup[prevTableItemClicked] ) {
+                            markerLookup[prevTableItemClicked].closePopup();
+                        }
+                        prevTableItemClicked = lookupKey;
+                        markerLookup[lookupKey].openPopup();
+                    }
+                }
+            }
+            function buildRegionTable(header, data) {
+                var output = $(document.createElement('table')).attr('class', 'table');
+                var tableHeader = $.parseHTML('\
+                    <thead>\
+                        <tr>\
+                            <th scope="col">剩餘數量</th>\
+                            <th scope="col">醫事機構資訊</th>\
+                        </tr>\
+                    </thead>\
+                ');
+                var tableBody = $(document.createElement('tbody')); //$.parseHTML('<tbody></tbody>');
+                output.append(tableHeader);
+                output.append(tableBody);
+                       
+                data.sort(function(a, b) {
+                    return b[header["快篩試劑截至目前結餘存貨數量"]] - a[header["快篩試劑截至目前結餘存貨數量"]];
+                });
+
+                for (var i=0, cnt=(data && data.length ? data.length : 0) ; i<cnt ; ++i) {
+                    var rowObj = $.parseHTML('\
+                        <tr onclick="tableItemClick(this); return false;" data-longitude="'+data[i][header["經度"]]+'" data-latitude="'+data[i][header["緯度"]]+'">\
+                            <td>'+data[i][header["快篩試劑截至目前結餘存貨數量"]]+'</td>\
+                            <td>'+data[i][header["醫事機構名稱"]]+'<br /><br/>'+data[i][header["醫事機構電話"]]+'<br/>'+data[i][header["醫事機構地址"]]+'<br/><br/>'+data[i][header["備註"]]+'</td>\
+                        </tr>\
+                    ');
+                    tableBody.append(rowObj);
+                }
+                return output;
+                //return output.prop("outerHTML");
+            }
+            function updataTable(input) {
+                if (input && input['status'] && input['data'] && input["header"]) {
+                    if (input["header"]["經度"] === undefined && input["header"]["緯度"] === undefined )
+                        return;
+
+                    resetTable();
+                    showDataInfo(input);
+
+                    var groupIDList = [];
+                    input['data'].forEach(function(item, index, array) {
+                        //var gpsLocation = [ parseFloat(item[ input["header"]["緯度"] ]), parseFloat(item[ input["header"]["經度"] ]) ] ;
+                        var address = item[input["header"]["醫事機構地址"]];
+                        var groupID = address.substring(0, 3);
+                        if (!tableItems[groupID]) {
+                            groupIDList.push(groupID);
+                            tableItems[groupID] = [ item ];
+                        } else {
+                            tableItems[groupID].push( item );
+                        }
+                    });
+                    //groupIDList.sort();
+                    groupIDList.sort(function(a, b) {
+                        if (!tableItems[b])
+                            return -1;
+                        if (!tableItems[a])
+                            return 1;
+                        return tableItems[b].length - tableItems[a].length;
+                    });
+                    var htmlItemListObj = $('#itemList');
+                    for (var i=0, cnt=groupIDList.length ; i<cnt ; ++i) {
+                        var htmlItemObj = $(document.createElement('div')).attr('class', 'accordion-item');
+                        var groupID = groupIDList[i];
+                        var displayTitle = groupID;
+                        if (tableItems[groupID]) {
+                            displayTitle += "(" + tableItems[groupID].length + ")";
+                        }
+                        var innerContent = $.parseHTML('\
+                            <h2 class="accordion-header" id="heading_'+i+'">\
+                                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapse_'+i+'" aria-expanded="true" aria-controls="collapseOne">\
+                                    '+displayTitle+'\
+                                </button>\
+                            </h2>\
+                            <div id="collapse_'+i+'" class="collapse" aria-labelledby="heading_'+i+'" data-parent="#itemList">\
+                                <div class="accordion-body">\
+                                </div>\
+                            </div>\
+                        ');
+                        //            '+buildRegionTable(input["header"], tableItems[groupID])+'\
+                        htmlItemObj.append(innerContent);
+                        htmlItemObj.find('.accordion-body').append(buildRegionTable(input["header"], tableItems[groupID]))
+                        htmlItemObj.appendTo(htmlItemListObj);
+                    }
+                }
+            }
+            function csvToAPIResponse(raw_csv) {
+                    var output = {
+                        'status': false, 
+                        'errorCode': 0,
+                        'cache': false,
+                        'header': {},
+                        'data': [],
+                        'csv': raw_csv,
+                        'update': (new Date()).toISOString(),
+                    };
+
+                    output['csv'] = $.csv.toObjects(raw_csv);
+                    output['status'] = output['csv'] && output['csv'].length && output['csv'].length > 0;
+                    if (output['status']) {
+                        var raw_key = Object.keys(output['csv'][0]);
+                        for (var i=0, cnt=raw_key.length; i<cnt ; ++i) {
+                            output['header'][ raw_key[i] ] = i;
+                        }
+                        for (var i=0, cnt=output['csv'].length ; i < cnt ; ++i) {
+                            var item = [];
+                            for (var j=0 ; j<raw_key.length ; ++j)
+                                item.push(output['csv'][i][raw_key[j]]);
+                            output['data'].push(item);
+                        }
+                    }
+                    return output;
+            }
+            function _getDataViaDataNhiGovTw() {
+                // % curl -I https://data.nhi.gov.tw/resource/Nhi_Fst/Fstdata.csv
+                // HTTP/1.1 200 OK
+                // Content-Length: 84419
+                // Content-Type: application/octet-stream
+                // Last-Modified: Sun, 15 May 2022 09:38:32 GMT
+                // Accept-Ranges: bytes
+                // ETag: W/"bf3ab8a3f68d81:0"
+                // X-Frame-Options: SAMEORIGIN
+                // X-Content-Type-Options: nosniff
+                // Access-Control-Allow-Origin: *
+                // Date: Sun, 15 May 2022 09:38:10 GMT
+                // Set-Cookie: TS01c41892=015a735d9ab81076c4017829c8c302a76b00ef49b4cf1e8189f20f44457e50c9edbc002118d1911194f82f992b51ca17111b34cdbb; Path=/; Domain=.data.nhi.gov.tw
+
+                $('#refreshButton').prop('disabled', true);
+                $.ajax({
+                    url: 'https://data.nhi.gov.tw/resource/Nhi_Fst/Fstdata.csv',
+                    cache: false,
+                }).done(function(data) {
+                    data = csvToAPIResponse(data);
+                    apiData = data;
+                    updateMap(data);   
+                    updataTable(data);
+                    $('#refreshButton').prop('disabled', false);
+                }).fail(function(data) {
+
+                }).always(function(data) {
+                });
+            }
+
+            var apiData = null;
+            function refreshData() {
+                _getDataViaDataNhiGovTw();
+
+                /* call backend api
+                $('#refreshButton').prop('disabled', true);
+                $.ajax({
+                    url: '/api',
+                    cache: false,
+                }).done(function(data) {
+                    apiData = data;
+                    updateMap(data);   
+                    updataTable(data);
+                    $('#refreshButton').prop('disabled', false);
+                }).fail(function(data) {
+                }).always(function(data) {
+                });
+                */
+            }
+            setInterval(function () {
+                if (apiData != null) {
+                    showDataInfo(apiData);
+                }
+            }, 5000);
+            $(document).ready(function() {
+                map = L.map('map').setView([25.033499866, 121.558997764], 12);  // Taipei 101
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                }).addTo(map);
+                markerClsuterGroupObj = L.markerClusterGroup();
+                map.addLayer(markerClsuterGroupObj);
+
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(handleUserLocation);
+                }
+                setupDataInfoButton();
+                refreshData();
+            });
+        </script>
+    </body>
+</html>
