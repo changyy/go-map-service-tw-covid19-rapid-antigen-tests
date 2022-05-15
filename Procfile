@@ -1,1 +1,1 @@
-web: bin/go-map-tw-covid90-rapid-antigen-tests
+web: bin/go-map-service-tw-covid19-rapid-antigen-tests

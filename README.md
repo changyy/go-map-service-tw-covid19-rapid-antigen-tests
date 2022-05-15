@@ -51,3 +51,10 @@ Please check https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-
 [GIN-debug] Environment variable PORT is undefined. Using port :8080 by default
 [GIN-debug] Listening and serving HTTP on :8080
 ```
+
+# Heroku
+
+```
+% heroku git:remote -a YourProjectName
+% git push heroku main
+```
